@@ -65,6 +65,11 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
 
   operands_and_partials<T_rate> ops_partials(lambda);
 
+  T_partials_return n_term_1;
+
+  if (n_size == 1)
+    n_term_1 = lgamma(n_vec[1] + 1.0);
+
   auto execute_chunk = [&](int start, int size) -> T_partials_return {
     const int end = start + size;
     T_partials_return logp_chunk(0.0);
@@ -73,6 +78,8 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
         if (include_summand<propto>::value) {
           if (n_size != 1)
             logp_chunk -= lgamma(n_vec[i] + 1.0);
+          else
+            logp_chunk -= n_term_1;
         }
         if (include_summand<propto, T_rate>::value)
           logp_chunk += multiply_log(n_vec[i], value_of(lambda_vec[i]))
@@ -110,10 +117,6 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
 
   for (std::size_t i = 0; i < futures.size(); ++i)
     logp += futures[i].get();
-
-  if (include_summand<propto>::value)
-    if (n_size == 1)
-      logp -= size * lgamma(n_vec[1] + 1.0);
 
   return ops_partials.build(logp);
 }
