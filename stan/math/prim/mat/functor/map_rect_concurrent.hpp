@@ -35,7 +35,8 @@ namespace internal {
  */
 inline int get_num_threads(int num_jobs) {
   int num_threads = 1;
-#ifdef STAN_THREADS
+  // WARNING: This makes map_rect_concurrent unsafe for now...
+  //#ifdef STAN_THREADS
   const char* env_stan_num_threads = std::getenv("STAN_NUM_THREADS");
   if (env_stan_num_threads != nullptr) {
     const int env_num_threads = std::atoi(env_stan_num_threads);
@@ -47,7 +48,7 @@ inline int get_num_threads(int num_jobs) {
   }
   if (num_threads > num_jobs)
     num_threads = num_jobs;
-#endif
+  //#endif
   return num_threads;
 }
 

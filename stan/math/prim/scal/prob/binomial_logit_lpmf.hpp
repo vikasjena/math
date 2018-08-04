@@ -23,6 +23,7 @@
 #include <stan/math/prim/scal/meta/include_summand.hpp>
 #include <stan/math/prim/scal/meta/scalar_seq_view.hpp>
 #include <stan/math/prim/scal/fun/inc_beta.hpp>
+#include <stan/math/prim/mat/functor/map_rect_concurrent.hpp>
 #include <boost/random/binomial_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
 
@@ -89,6 +90,7 @@ typename return_type<T_prob>::type binomial_logit_lpmf(const T_n& n,
   for (size_t i = 0; i < length(alpha); ++i)
     log_inv_logit_neg_alpha[i] = log_inv_logit(-value_of(alpha_vec[i]));
 
+  /*
   for (size_t i = 0; i < size; ++i)
     logp += n_vec[i] * log_inv_logit_alpha[i]
             + (N_vec[i] - n_vec[i]) * log_inv_logit_neg_alpha[i];
@@ -113,6 +115,48 @@ typename return_type<T_prob>::type binomial_logit_lpmf(const T_n& n,
                - (N_vec[i] - n_vec[i]) * inv_logit(value_of(alpha_vec[i]));
     }
   }
+  */
+
+  auto execute_chunk = [&](int start, int size) -> T_partials_return {
+    const int end = start + size;
+    T_partials_return logp_chunk(0.0);
+    for (int i = start; i != end; i++) {
+      logp_chunk += n_vec[i] * log_inv_logit_alpha[i]
+                    + (N_vec[i] - n_vec[i]) * log_inv_logit_neg_alpha[i];
+
+      if (!is_constant_struct<T_prob>::value) {
+        ops_partials.edge1_.partials_[i]
+            += n_vec[i] * inv_logit(-value_of(alpha_vec[i]))
+               - (N_vec[i] - n_vec[i]) * inv_logit(value_of(alpha_vec[i]));
+      }
+    }
+    return logp_chunk;
+  };
+
+  std::vector<std::future<T_partials_return>> futures;
+
+  int num_threads = internal::get_num_threads(size);
+  int num_jobs_per_thread = size / num_threads;
+  futures.emplace_back(
+      std::async(std::launch::deferred, execute_chunk, 0, num_jobs_per_thread));
+
+  //#ifdef STAN_THREADS
+  if (num_threads > 1) {
+    const int num_big_threads
+        = (size - num_jobs_per_thread) % (num_threads - 1);
+    const int first_big_thread = num_threads - num_big_threads;
+    for (int i = 1, job_start = num_jobs_per_thread, job_size = 0;
+         i < num_threads; ++i, job_start += job_size) {
+      job_size = i >= first_big_thread ? num_jobs_per_thread + 1
+                                       : num_jobs_per_thread;
+      futures.emplace_back(
+          std::async(std::launch::async, execute_chunk, job_start, job_size));
+    }
+  }
+  //#endif
+
+  for (std::size_t i = 0; i < futures.size(); ++i)
+    logp += futures[i].get();
 
   return ops_partials.build(logp);
 }

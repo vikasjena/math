@@ -56,7 +56,7 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
   size_t size = max_size(n, lambda);
   size_t n_size = n_vec.size();
 
-  for (size_t i = 0; i < size; i++)
+  for (size_t i = 0; i < length(lambda_vec); i++)
     if (is_inf(lambda_vec[i]))
       return LOG_ZERO;
   for (size_t i = 0; i < size; i++)
@@ -86,6 +86,8 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
                         - value_of(lambda_vec[i]);
       }
 
+      // in case we have a scalar lambda, then this will be a problem
+      // here as we are accessing the same thing from all threads!
       if (!is_constant_struct<T_rate>::value)
         ops_partials.edge1_.partials_[i]
             += n_vec[i] / value_of(lambda_vec[i]) - 1.0;
@@ -100,7 +102,7 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
   futures.emplace_back(
       std::async(std::launch::deferred, execute_chunk, 0, num_jobs_per_thread));
 
-#ifdef STAN_THREADS
+  //#ifdef STAN_THREADS
   if (num_threads > 1) {
     const int num_big_threads
         = (size - num_jobs_per_thread) % (num_threads - 1);
@@ -113,7 +115,7 @@ typename return_type<T_rate>::type poisson_lpmf(const T_n& n,
           std::async(std::launch::async, execute_chunk, job_start, job_size));
     }
   }
-#endif
+  //#endif
 
   for (std::size_t i = 0; i < futures.size(); ++i)
     logp += futures[i].get();
